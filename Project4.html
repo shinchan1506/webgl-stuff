@@ -1,0 +1,227 @@
+<!--coneFunctionsExercise.html
+
+	Written Fall 2020 by Shin Imai from a template provided by John Bell for CS 425
+    
+ -->
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>Project 4 Shin Imai</title>
+
+<!-- First to load up the external javascript files.  MultiObjectFunctions and cube.js does the work -->
+
+<script type="text/javascript" src="../Common/webgl-utils.js"></script>
+<script type="text/javascript" src="../Common/initShaders.js"></script>
+<script type="text/javascript" src="../Common/MV.js"></script>
+<script type="text/javascript" src="projectDraw.js"></script>	<!--   Change this line -->
+<script type="text/javascript" src="coneFunctions.js"></script>	<!--   Change this line -->
+<script type="text/javascript" src="CylinderFunctions.js"></script>
+<script type="text/javascript" src="Shape.js"></script>
+<script type="text/javascript" src="Cube.js"></script>
+<script type="text/javascript" src="Sphere.js"></script>
+<script type="text/javascript" src="TextureData.js"></script>
+
+<!-- First the vertex shader ------------------------------------------------------------------>
+
+<script id="vertex-shader" type="x-shader/x-vertex" >
+
+	struct AmbientLight {
+		mediump vec4 ambientProduct;
+		mediump vec4 diffuseProduct;
+		mediump vec4 specularProduct;
+		mediump vec4 source;
+	};
+
+	// Attributes are values that vary from vertex to vertex 
+	attribute vec3 vPosition;	// Vertex position data in 3D space
+	attribute vec3 vColor;		// Vertex color data - Not needed for all applications
+	attribute vec3 vNormal;
+	attribute vec2 vTexCoords;	// Texture Coordinates
+	
+	// Uniform variables are shared for all vertices 
+	uniform mat4 vModelView;	// Camera Model View Matrix
+	uniform mat4 vProjection;	// Camera Projection Matrix
+	uniform mat4 vTransformation;	// Model transformation matrix
+	uniform mat4 vRotation; // the rotation part of the transformation
+	uniform vec3 eyePosition;
+
+	// light test
+	uniform AmbientLight a1;
+
+	// Uniforms for the material properties
+	uniform mediump vec4 materialAmbient; 
+	uniform mediump vec4 materialDiffuse;
+	uniform mediump vec4 materialSpecular;
+	uniform mediump float shininess;
+
+	// texture Uniforms
+	varying vec2 fTexCoords;	// Texture coordinatges passed to fragment shader
+
+	// Varying values are passed from vertex shader to fragment shader, as interpolated values 
+	varying vec4 color;			// Interpolated color 
+	varying vec4 normal;
+	varying vec3 N, V;
+	
+
+	// v is the viewing vector
+	vec4 calcAmbientLight (AmbientLight a, vec3 L) {
+		vec3 H = normalize (L + V);
+
+		// Compute ambient contribution
+		vec4 Ka = vec4(vColor, 1.0);
+		vec4 Lai = a.ambientProduct * materialAmbient;
+		vec4 ambient = Ka * Lai;
+
+		// compute diffuse contribution
+		vec4 Ld = a.diffuseProduct * materialDiffuse;
+		vec4 Kd = Ka;
+		float lDotN = max( dot(L, N), 0.0 );
+		vec4 diffuse = Ld * Kd * lDotN;
+
+		// specular contribution
+		float hdotN = max (dot (H, N), 0.0);
+		vec4 Lsi = a.specularProduct * materialSpecular;
+		vec4 Ks = Kd; 
+		vec4 specular = Ks * Lsi * pow( hdotN, shininess) ;
+		
+		if( dot(L, N) < 0.0 ) {
+			specular = vec4(0.0, 0.0, 0.0, 1.0);
+		} 
+		
+		vec4 tcolor = ambient + diffuse + specular;
+		return tcolor;
+	}
+
+	void main( ) {
+		precision mediump float;
+		
+		// transformed positions
+		gl_Position = vProjection * vModelView * vTransformation * vec4( vPosition, 1.0 );
+		normal =   vProjection * vModelView * vRotation * vec4(vNormal,1.0);
+		N = normalize (normal.xyz);
+		vec3 pos = (vTransformation * vec4(vPosition,0.0)).xyz;
+		V = normalize (eyePosition - pos);
+
+		vec4 contribution = calcAmbientLight(a1, normalize(a1.source.xyz - pos));
+		
+		color = contribution;
+		fTexCoords = vTexCoords;
+
+		return;		
+		
+	} // end of main( ) of vertex shader
+
+</script>	<!--	End of vertex shader -->
+
+<!--  Next the fragment shader --------------------------------------------------------------------->
+
+<script id="fragment-shader" type="x-shader/x-fragment">
+	precision mediump float;
+	
+	struct DirectedLight {
+		vec4 ambientProduct;
+		vec4 diffuseProduct;
+		vec4 specularProduct;
+		vec4 source;
+		vec4 direction;
+	};
+
+	uniform DirectedLight d1;
+
+	// Varying variables are interpolated between vertices of a triangle
+	varying vec4 color;			// Fragment color - Not needed in all applications
+	varying vec4 normal;
+	varying vec3 N, V;
+	varying float fGouraud;
+	varying vec2 fTexCoords;	// Fragment texture coordinates
+
+	// Uniform variables are shared for all fragments 
+	uniform mediump vec4 materialAmbient; 
+	uniform mediump vec4 materialDiffuse;
+	uniform mediump vec4 materialSpecular;
+	uniform mediump float shininess;
+
+	// textures
+	uniform sampler2D texMap;
+	uniform float texEnabled;
+
+	// v is the viewing vector
+	vec4 calcDirectedLight (DirectedLight d, vec3 L) {
+		vec3 H = normalize (L + V);
+
+		// Compute ambient contribution
+		vec4 Ka = color;
+		vec4 Lai = d.ambientProduct * materialAmbient;
+		vec4 ambient = Ka * Lai;
+
+		// compute diffuse contribution
+		vec4 Ld = d.diffuseProduct * materialDiffuse;
+		vec4 Kd = Ka;
+		float lDotN = max( dot(L, N), 0.0 );
+		vec4 diffuse = Ld * Kd * lDotN;
+
+		// specular contribution
+		float hdotN = max (dot (H, N), 0.0);
+		vec4 Lsi = d.specularProduct * materialSpecular;
+		vec4 Ks = Kd; 
+		vec4 specular = Ks * Lsi * pow( hdotN, shininess) ;
+		
+		if( dot(L, N) < 0.0 ) {
+			specular = vec4(0.0, 0.0, 0.0, 1.0);
+		} 
+		
+		vec4 tcolor = ambient + diffuse + specular;
+		return tcolor;
+	}
+
+	void main( ) {
+		
+		vec4 texcolor = texture2D( texMap, fTexCoords ); 
+		vec3 pos = (gl_FragCoord).xyz;
+
+		if (texEnabled == 0.0)
+			gl_FragColor = color + calcDirectedLight(d1, normalize( - (d1.direction).xyz)) ;
+		else
+			gl_FragColor = color * texcolor + calcDirectedLight(d1, normalize( - (d1.direction).xyz));
+
+		return;
+	
+	} // End of main( ) for fragment shader
+	
+</script>	<!-- End of fragment shader -->
+
+</head>
+
+<!-- End of all the scripts.  Now here is the actual web page -->
+
+<body>
+<h3 align="center">Project 4: Implementing Texture Mapping in Fragment shaders<br />
+by Shin Imai simai2, Cone code by Prof. John Bell
+Fall 2020 - 
+CS 425</h3>
+<p></p>
+
+<canvas id="gl-canvas" width="600" height="400">
+  Ooops No Canvas Found
+</canvas>
+<p id="instructions"> </p>
+<p>
+  <pre>
+	<b>What it does and how it works:</b>
+	I have 3 different textures that are made as arrays in TextureData.js. 
+	The first is "Stripes" which is self explanatory. The second is "Checkers," which is actually more like a grid. 
+	The final one is "HI," which is the texture for the sign that will read "HI."
+	
+	I added texture coordinates for the shapes in their respective files (Cube.js, CylinderFunctions.js, coneFunctions.js). 
+	The fragment shader can be notified whether or not to texture map an object by using the uniform float called texEnabled.
+	If texEnabled is 0.0, then the texture will not be mapped. Otherwise, the texture that is bound will be mapped.
+
+	In the amusement park, everything but the cube seats are texture mapped. The carousel's foundation (the cone and the cylinder) have the stripes texture.
+	The ferris wheel has the checkers texture, and the sign has the HI texture.
+  </pre>>
+</p>
+</body>
+</html>
