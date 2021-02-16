@@ -1,6 +1,6 @@
 /* projectDraw.js
 //	
-//	Written by Shin Imai for CS 425, Fall 2020
+//	Written by Shin Imai 
 */
 
 // Object-independent variables
